@@ -42,6 +42,54 @@ def send_payment_receipt(payment_id):
     )
 
 
+LOW_ATTENDANCE_THRESHOLD = 75  # percent
+LOW_ATTENDANCE_LOOKBACK_DAYS = 30
+LOW_ATTENDANCE_MIN_RECORDS = 5  # skip students with too little data to judge yet
+
+
+@shared_task
+def check_low_attendance():
+    """Scheduled via Celery Beat — flags students whose attendance % over
+    the trailing LOW_ATTENDANCE_LOOKBACK_DAYS is below the threshold and
+    queues a notification (FR-3.4). Beat's daily schedule naturally caps
+    this to one alert per student per day."""
+    from datetime import timedelta
+    from django.db.models import Count, Q
+    from apps.attendance.models import Attendance
+    from apps.students.models import Student
+    from apps.notifications.models import Notification
+
+    since = timezone.now().date() - timedelta(days=LOW_ATTENDANCE_LOOKBACK_DAYS)
+    summary = (
+        Attendance.all_objects.filter(date__gte=since, student__is_active=True)
+        .values("student_id")
+        .annotate(
+            total=Count("id"),
+            present=Count("id", filter=Q(status=Attendance.Status.PRESENT)),
+        )
+    )
+
+    for row in summary:
+        if row["total"] < LOW_ATTENDANCE_MIN_RECORDS:
+            continue
+        percentage = row["present"] / row["total"] * 100
+        if percentage >= LOW_ATTENDANCE_THRESHOLD:
+            continue
+
+        student = Student.all_objects.select_related("user", "tenant").get(id=row["student_id"])
+        notification = Notification.all_objects.create(
+            tenant=student.tenant,
+            user=student.user,
+            channel=Notification.Channel.EMAIL,
+            subject="Low Attendance Alert",
+            message=(
+                f"Your attendance over the last {LOW_ATTENDANCE_LOOKBACK_DAYS} days is "
+                f"{percentage:.1f}%, below the required {LOW_ATTENDANCE_THRESHOLD}%."
+            ),
+        )
+        send_notification.delay(notification.id)
+
+
 @shared_task
 def send_fee_due_reminders():
     """Scheduled via Celery Beat — runs daily, reminds students of upcoming dues."""

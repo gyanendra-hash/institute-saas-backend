@@ -146,8 +146,10 @@ from the subdomain automatically.
 | `/api/batches/` | GET/POST | List/create batches (filter by course/status, search) |
 | `/api/batches/{id}/` | GET/PATCH/DELETE | Retrieve/update/remove a batch |
 | `/api/batches/{id}/assign-students/` | POST | Assign a list of existing students to this batch (admin only) |
-| `/api/attendance/` | GET/POST | Attendance records |
+| `/api/attendance/` | GET/POST | Attendance records (duplicate student/date rejected with a 400) |
 | `/api/attendance/bulk-mark/` | POST | Mark attendance for a whole batch in one call |
+| `/api/attendance/report/?student_id=` | GET | Attendance % for one student, optional `?from=&to=` date range |
+| `/api/attendance/report/?batch_id=` | GET | Per-student breakdown + batch-average attendance % |
 
 ## Milestones
 
@@ -157,8 +159,8 @@ Full week-by-week plan: SRS §7. Status:
 |---|---|---|
 | **M1** | Foundation: Django setup, Tenant model + middleware, custom User + JWT auth, Docker, free-tier deploy config | ✅ Done |
 | **M2** | Student & Batch management (CRUD, RBAC, filters) | ✅ Done |
-| M3 | Attendance module (bulk marking, reports) | Next |
-| M4 | Fee management (Razorpay, receipts, reminders) | Planned |
+| **M3** | Attendance module (bulk marking, reports) | ✅ Done |
+| M4 | Fee management (Razorpay, receipts, reminders) | Next |
 | M5 | Exam/Result module + analytics | Planned |
 | M6 | Notifications (Celery + Email/SMS/WhatsApp) | Planned |
 | M7 | Admin dashboard & reporting APIs | Planned |
@@ -199,6 +201,36 @@ Full week-by-week plan: SRS §7. Status:
   has no `create_user`/`create_superuser` — this silently broke
   `manage.py createsuperuser`. Now `TenantUserManager` combines Django's
   `UserManager` with the tenant-scoping `TenantManager`.
+- **Generated the initial migration files** (`0001_initial.py`) for every
+  app — the M1 scaffold shipped models but no migrations, so
+  `manage.py migrate` created zero tables. Verified end-to-end against a
+  throwaway SQLite DB (see M3 notes below).
+
+### M3 — what's new
+
+- `report` action on `AttendanceViewSet` — attendance % per student
+  (`?student_id=`) or aggregated per batch (`?batch_id=`), with an
+  optional `?from=&to=` date range — FR-3.3
+- `validate()` on `AttendanceSerializer` rejects a duplicate student/date
+  with a clean 400 instead of an unhandled `IntegrityError` — the DB's
+  `unique_together` includes `tenant`, which isn't a serializer field, so
+  DRF's automatic `UniqueTogetherValidator` couldn't see the constraint —
+  this covers it explicitly — FR-3.2
+- `check_low_attendance` Celery Beat task (`apps/notifications/tasks.py`,
+  runs daily) — flags students under 75% attendance over the trailing 30
+  days and queues an email alert — FR-3.4
+- Bulk marking (FR-3.1) was already in place from the M1 scaffold — its
+  `update_or_create` upsert also means it never collides with FR-3.2
+- **Fixed another latent M1 bug:** `config/__init__.py` was empty, so the
+  Celery app was never wired up via Django settings — every `.delay()`
+  call would have tried the default `amqp://guest@localhost//` broker
+  instead of the configured Redis, in every environment. Added the
+  standard `from .celery import app as celery_app` wiring.
+- Verified all of the above (roll numbers, bulk import, duplicate
+  rejection, report math, the low-attendance task end-to-end through an
+  eager Celery run) with a scripted functional test against a throwaway
+  SQLite DB — not committed, but every check passed before this was
+  pushed.
 
 ### Not yet in this scaffold
 

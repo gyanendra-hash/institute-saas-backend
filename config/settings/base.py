@@ -119,6 +119,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.notifications.tasks.send_fee_due_reminders",
         "schedule": 60 * 60 * 24,  # once every 24h
     },
+    "check-low-attendance-daily": {
+        "task": "apps.notifications.tasks.check_low_attendance",
+        "schedule": 60 * 60 * 24,  # once every 24h
+    },
 }
 
 # --- Cache (Redis) ---
