@@ -99,12 +99,25 @@ App: http://localhost:8000 · Admin: http://localhost:8000/admin/
 
 ## Deployment
 
-- **Free tier (Render + Neon + Upstash), ₹0 to start:** `render.yaml` is a
-  Render Blueprint — connect this repo on Render and it provisions the web
-  service, two Celery workers (worker + beat), and a free Redis instance.
-  Set `DATABASE_URL` (from Neon) and the Razorpay/CORS vars in the Render
-  dashboard, then run `python manage.py migrate` from the Render Shell tab.
-  Full steps: [`docs/Coaching_SaaS_Deployment_Guide.docx`](docs/Coaching_SaaS_Deployment_Guide.docx).
+**Live (free tier):** https://institute-saas-web.onrender.com — web
+service on Render (free plan) + Neon Postgres, migrated and running.
+`/admin/` and JWT login (`/api/auth/login/`) verified working.
+
+- Celery worker/beat are **not deployed yet** — Render's free plan only
+  covers Web Services; background workers need the Starter plan
+  (~$7/mo each). Notifications/reminders queue in the DB but won't be
+  dispatched until a worker is added (Render dashboard → New → Background
+  Worker, same repo/build command as `render.yaml`, plan `starter`).
+- Render's default `*.onrender.com` host has no tenant subdomain (no
+  wildcard DNS on the free plan), so `TenantMiddleware` treats it as
+  platform-level, same as `localhost` — real per-tenant subdomains need a
+  custom domain (Deployment Guide §3.6).
+- Render's current default Python (3.14) has no ABI-compatible
+  `psycopg2-binary` wheel — pinned to 3.12 via `.python-version` (also
+  matches the SRS-specified runtime).
+- `render.yaml` is the Blueprint reference for a from-scratch dashboard
+  deploy (connect repo → New → Blueprint) — the live instance above was
+  provisioned directly via the Render API instead.
 - **Self-hosted / paid infra:** `config.settings.prod` + `docker/`
   (Dockerfile, docker-compose, nginx) as the reverse-proxy path.
 - Upgrading from free → paid later is a **plan change, not a rewrite** —
