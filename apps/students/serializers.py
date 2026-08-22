@@ -13,3 +13,7 @@ class StudentSerializer(serializers.ModelSerializer):
             "guardian_name", "guardian_phone", "date_of_birth", "is_active",
         ]
         read_only_fields = ["id", "tenant"]
+        extra_kwargs = {
+            # System auto-generates it (FR-2.3) when left blank on create.
+            "roll_number": {"required": False},
+        }

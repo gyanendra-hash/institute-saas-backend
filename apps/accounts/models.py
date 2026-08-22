@@ -1,7 +1,13 @@
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, UserManager
 from django.db import models
 from apps.tenants.models import Tenant
 from apps.tenants.managers import TenantManager
+
+
+class TenantUserManager(UserManager, TenantManager):
+    """UserManager (create_user/create_superuser — needed by `createsuperuser`
+    and bulk student import) combined with TenantManager (tenant-scoped
+    querysets for list/detail views)."""
 
 
 class User(AbstractUser):
@@ -18,8 +24,8 @@ class User(AbstractUser):
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.STUDENT)
     phone = models.CharField(max_length=20, blank=True)
 
-    objects = TenantManager()          # tenant-scoped by default
-    all_objects = models.Manager()     # unscoped — auth backend / superadmin use
+    objects = TenantUserManager()      # tenant-scoped by default, has create_user/create_superuser
+    all_objects = UserManager()        # unscoped — auth backend / superadmin / bulk import use
 
     class Meta:
         indexes = [

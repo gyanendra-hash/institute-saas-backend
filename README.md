@@ -139,7 +139,13 @@ from the subdomain automatically.
 | `/api/auth/login/` | POST | JWT login (tenant + role embedded in token) |
 | `/api/auth/login/refresh/` | POST | Refresh access token |
 | `/api/auth/me/` | GET/PATCH | Current user profile |
-| `/api/students/` | GET/POST | List/create students (filter, search, paginate) |
+| `/api/students/` | GET/POST | List/create students (filter by batch/status, search by name/roll no, paginate) |
+| `/api/students/{id}/` | GET/PATCH/DELETE | Retrieve/update/remove a student |
+| `/api/students/{id}/deactivate/` | POST | Deactivate a student profile (admin only) |
+| `/api/students/bulk-import/` | POST | Bulk-create students from a CSV upload (admin only) |
+| `/api/batches/` | GET/POST | List/create batches (filter by course/status, search) |
+| `/api/batches/{id}/` | GET/PATCH/DELETE | Retrieve/update/remove a batch |
+| `/api/batches/{id}/assign-students/` | POST | Assign a list of existing students to this batch (admin only) |
 | `/api/attendance/` | GET/POST | Attendance records |
 | `/api/attendance/bulk-mark/` | POST | Mark attendance for a whole batch in one call |
 
@@ -150,8 +156,8 @@ Full week-by-week plan: SRS §7. Status:
 | Milestone | Scope | Status |
 |---|---|---|
 | **M1** | Foundation: Django setup, Tenant model + middleware, custom User + JWT auth, Docker, free-tier deploy config | ✅ Done |
-| M2 | Student & Batch management (CRUD, RBAC, filters) | Next |
-| M3 | Attendance module (bulk marking, reports) | Planned |
+| **M2** | Student & Batch management (CRUD, RBAC, filters) | ✅ Done |
+| M3 | Attendance module (bulk marking, reports) | Next |
 | M4 | Fee management (Razorpay, receipts, reminders) | Planned |
 | M5 | Exam/Result module + analytics | Planned |
 | M6 | Notifications (Celery + Email/SMS/WhatsApp) | Planned |
@@ -172,6 +178,27 @@ Full week-by-week plan: SRS §7. Status:
 - Docker (web + Postgres + Redis + Celery worker/beat) for local dev
 - Free-tier deployment path (`render.yaml`, `config/settings/free_tier.py`)
   so M1 can go live on Render/Neon at ₹0 cost
+
+### M2 — what's new
+
+- `Batch` CRUD API (`apps/batches/`) — was model + admin only in M1, now
+  has a full `BatchViewSet` (search/filter by course & status) — FR-2.2
+- `assign_students` action — assign many existing students to a batch in
+  one call, instead of one PATCH per student — FR-2.2
+- Auto-generated per-tenant roll numbers (`STU-0001`, ...) — filled in on
+  create when left blank, computed in `apps/students/services.py` with a
+  tenant-row lock to stay unique under concurrent creates — FR-2.3
+- CSV bulk student import (`apps/students/services.py:bulk_import_students`)
+  — creates the `User` + `Student` per row, skips bad rows individually
+  with a per-row error instead of failing the whole file — FR-2.4
+- `deactivate` action on `StudentViewSet` — explicit soft-delete matching
+  the SRS wording, instead of overloading the DELETE endpoint — FR-2.1
+- Search/filter by batch, active status, and name was already in place
+  from the M1 scaffold and needed no changes — FR-2.5
+- Fixed a latent M1 bug: `User.objects` was a plain `TenantManager`, which
+  has no `create_user`/`create_superuser` — this silently broke
+  `manage.py createsuperuser`. Now `TenantUserManager` combines Django's
+  `UserManager` with the tenant-scoping `TenantManager`.
 
 ### Not yet in this scaffold
 
