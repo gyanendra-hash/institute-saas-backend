@@ -1,0 +1,71 @@
+services:
+  - type: web
+    name: coaching-saas-web
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements/free_tier.txt && python manage.py collectstatic --noinput"
+    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3"
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.free_tier
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_ALLOWED_HOSTS
+        value: ".onrender.com"
+      - key: DATABASE_URL
+        sync: false # paste the Neon connection string manually
+      - key: REDIS_URL
+        fromService:
+          name: coaching-saas-redis
+          type: redis
+          property: connectionString
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+
+  - type: worker
+    name: coaching-saas-celery-worker
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements/free_tier.txt"
+    startCommand: "celery -A config worker -l info"
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.free_tier
+      - fromGroup: coaching-saas-shared
+
+  - type: worker
+    name: coaching-saas-celery-beat
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements/free_tier.txt"
+    startCommand: "celery -A config beat -l info"
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.free_tier
+      - fromGroup: coaching-saas-shared
+
+  - type: redis
+    name: coaching-saas-redis
+    plan: free
+    ipAllowList: []
+
+envVarGroups:
+  - name: coaching-saas-shared
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: coaching-saas-redis
+          type: redis
+          property: connectionString
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
