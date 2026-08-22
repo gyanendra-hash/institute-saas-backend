@@ -1,28 +1,76 @@
-# Coaching / Institute Management SaaS
+# Institute SaaS Backend
 
-Multi-tenant Django + DRF backend for coaching institute management —
-students, batches, attendance, fees (Razorpay), exams/results, and
-async notifications (Celery).
+Multi-tenant Django + DRF backend for coaching / institute management —
+students, batches, attendance, fees (Razorpay), exams & results, and
+async notifications (Email/SMS/WhatsApp via Celery). One codebase, many
+institutes, each fully data-isolated.
+
+Full requirements: [`docs/Coaching_SaaS_SRS.docx`](docs/Coaching_SaaS_SRS.docx) ·
+Deployment walkthrough: [`docs/Coaching_SaaS_Deployment_Guide.docx`](docs/Coaching_SaaS_Deployment_Guide.docx)
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Backend | Python 3.12, Django 5.x, Django REST Framework |
+| Auth | JWT (`djangorestframework-simplejwt`), tenant- and role-aware |
+| Database | PostgreSQL 15+ |
+| Cache / broker | Redis |
+| Async tasks | Celery (worker + beat) |
+| Payments | Razorpay |
+| Frontend (planned, M8) | React / Next.js |
+| Free-tier hosting | Render + Neon + Upstash |
+| Paid / self-hosted | Docker + Nginx + Gunicorn |
 
 ## Architecture
 
-- **Backend:** Django 5 + Django REST Framework, JWT auth
-- **Multi-tenancy:** Shared DB + `tenant_id`, resolved per-request via subdomain
-  (`apps/tenants/middleware.py`) and enforced automatically through a
-  tenant-scoped model manager (`apps/tenants/managers.py`) — no query can
-  accidentally leak cross-tenant data.
-- **Async:** Celery + Redis for notifications, payment receipts, fee reminders
-- **DB:** PostgreSQL
-- **Admin:** Enhanced Django admin — tenant-scoped querysets, autocomplete,
-  inlines (Batch→Students, Exam→Results), CSV export, revenue summary
+- **Multi-tenancy:** shared DB + `tenant_id`, resolved per-request from the
+  subdomain (`apps/tenants/middleware.py`) and enforced automatically
+  through a tenant-scoped default model manager (`apps/tenants/managers.py`)
+  — no query can accidentally leak cross-tenant data.
+- **Auth:** custom `User` model with `role` (admin / teacher / student /
+  parent). Login returns a JWT with `tenant_id` and `role` embedded, so the
+  frontend and every permission check work off the token alone.
+- **Async:** Celery + Redis for notifications, payment receipts, and
+  fee-due reminders — dispatched off the request/response cycle.
+- **Admin:** enhanced Django admin — tenant-scoped querysets, autocomplete,
+  inlines (Batch→Students, Exam→Results), CSV export, revenue summary.
+
+## Project structure
+
+```
+institute-saas-backend/
+├── config/                  # settings (base/dev/prod/free_tier), urls, celery, wsgi/asgi
+│   └── settings/
+│       ├── base.py          # shared across every environment
+│       ├── dev.py           # local development
+│       ├── prod.py          # self-hosted / Docker, discrete DB_* env vars
+│       └── free_tier.py     # Render + Neon + Upstash, single DATABASE_URL/REDIS_URL
+├── apps/
+│   ├── tenants/              # Tenant model, subdomain middleware, tenant-scoped manager
+│   ├── accounts/              # custom User, JWT auth, tenant-aware auth backend
+│   ├── batches/                 # course/batch model
+│   ├── students/                  # student CRUD API
+│   ├── attendance/                  # attendance + bulk-mark API
+│   ├── fees/                          # fee structures, Razorpay payments
+│   ├── exams/                           # exams + results
+│   └── notifications/                     # Celery async tasks (email/SMS/WhatsApp)
+├── common/                  # shared DRF permissions, pagination
+├── docker/                  # Dockerfile, docker-compose, nginx.conf
+├── docs/                    # source SRS + Deployment Guide
+├── requirements/            # base / dev / prod / free_tier pip requirements
+└── render.yaml              # Render Blueprint (free-tier deploy)
+```
 
 ## Local setup
 
 ```bash
-python -m venv venv && source venv/bin/activate
+git clone https://github.com/gyanendra-hash/institute-saas-backend.git
+cd institute-saas-backend
+python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements/dev.txt
 
-# Start Postgres + Redis (or use docker-compose below)
+# Start Postgres + Redis (or use docker-compose below), then:
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
@@ -41,33 +89,38 @@ App: http://localhost:8000 · Admin: http://localhost:8000/admin/
 | Variable | Purpose |
 |---|---|
 | `DJANGO_SECRET_KEY` | Django secret key |
-| `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` | PostgreSQL connection |
-| `REDIS_URL` | Redis (cache + Celery broker) |
+| `DJANGO_SETTINGS_MODULE` | Which settings file to load (`config.settings.dev` / `.prod` / `.free_tier`) |
+| `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` | PostgreSQL connection — used by `config.settings.prod` |
+| `DATABASE_URL` | Single Postgres connection string (Neon) — used by `config.settings.free_tier` |
+| `REDIS_URL` | Redis — cache + Celery broker |
 | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | Payment gateway |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated frontend origins |
-
-`config.settings.prod` expects the discrete `DB_*` vars above. The free-tier
-deployment path (`config.settings.free_tier`, see below) instead takes a
-single `DATABASE_URL` (Neon) and `REDIS_URL` (Render/Upstash) connection
-string — see `Coaching_SaaS_Deployment_Guide.docx` for the full walkthrough.
+| `DJANGO_ALLOWED_HOSTS` | Comma-separated allowed hostnames |
 
 ## Deployment
 
-- **Free tier (Render + Neon + Upstash):** `render.yaml` in this repo is a
-  Render Blueprint — connect the repo on Render, it provisions the web
+- **Free tier (Render + Neon + Upstash), ₹0 to start:** `render.yaml` is a
+  Render Blueprint — connect this repo on Render and it provisions the web
   service, two Celery workers (worker + beat), and a free Redis instance.
   Set `DATABASE_URL` (from Neon) and the Razorpay/CORS vars in the Render
   dashboard, then run `python manage.py migrate` from the Render Shell tab.
-  Full steps: `Coaching_SaaS_Deployment_Guide.docx`.
-- **Self-hosted / Docker (paid infra):** use `config.settings.prod` +
-  `docker/` (Dockerfile, docker-compose, nginx) as the reverse-proxy path.
+  Full steps: [`docs/Coaching_SaaS_Deployment_Guide.docx`](docs/Coaching_SaaS_Deployment_Guide.docx).
+- **Self-hosted / paid infra:** `config.settings.prod` + `docker/`
+  (Dockerfile, docker-compose, nginx) as the reverse-proxy path.
+- Upgrading from free → paid later is a **plan change, not a rewrite** —
+  same `DATABASE_URL` / `REDIS_URL` format throughout (see Deployment
+  Guide §6).
 
 ## Branching strategy
 
-- `dev` — active development, all feature work merges here first
-- `stage` — pre-production integration/testing, merged from `dev`
-- `main` — production-ready, merged from `stage`; tagged per milestone
-  (e.g. `v0.1.0-m1`)
+| Branch | Purpose |
+|---|---|
+| `dev` | active development — all feature/milestone work merges here first |
+| `stage` | pre-production integration & QA testing, merged from `dev` |
+| `main` | production-ready, merged from `stage`; tagged per milestone (e.g. `v0.1.0-m1`) |
+
+Flow: feature branch → PR into `dev` → PR `dev` → `stage` (QA sign-off) →
+PR `stage` → `main` (deploy to production) → tag the release.
 
 ## Local tenant testing (no real DNS needed)
 
@@ -90,52 +143,39 @@ from the subdomain automatically.
 | `/api/attendance/` | GET/POST | Attendance records |
 | `/api/attendance/bulk-mark/` | POST | Mark attendance for a whole batch in one call |
 
-## Project structure
-
-```
-coaching_saas/
-├── config/            # settings (base/dev/prod), urls, celery, wsgi/asgi
-├── apps/
-│   ├── tenants/        # multi-tenancy core
-│   ├── accounts/        # custom User, JWT auth, admin
-│   ├── batches/          # course/batch model
-│   ├── students/          # student CRUD API
-│   ├── attendance/         # attendance + bulk-mark API
-│   ├── fees/                # fee structures, Razorpay payments
-│   ├── exams/                 # exams + results
-│   └── notifications/          # Celery async tasks
-├── common/             # shared permissions, pagination
-├── docker/             # Dockerfile, docker-compose, nginx
-└── requirements/       # base/dev/prod pip requirements
-```
-
 ## Milestones
 
-See the accompanying **SRS document** (`Coaching_SaaS_SRS.docx`) — Section 7
-for the full week-by-week milestone plan (M1–M9), and Section 6 for the ER
-diagram.
+Full week-by-week plan: SRS §7. Status:
 
-### M1 — Foundation (this scaffold) — DONE
+| Milestone | Scope | Status |
+|---|---|---|
+| **M1** | Foundation: Django setup, Tenant model + middleware, custom User + JWT auth, Docker, free-tier deploy config | ✅ Done |
+| M2 | Student & Batch management (CRUD, RBAC, filters) | Next |
+| M3 | Attendance module (bulk marking, reports) | Planned |
+| M4 | Fee management (Razorpay, receipts, reminders) | Planned |
+| M5 | Exam/Result module + analytics | Planned |
+| M6 | Notifications (Celery + Email/SMS/WhatsApp) | Planned |
+| M7 | Admin dashboard & reporting APIs | Planned |
+| M8 | Frontend integration (React) | Planned |
+| M9 | Production readiness: CI/CD, monitoring, load testing | Planned |
+
+### M1 — what's in this scaffold
 
 - Django 5 project layout: `config/` (settings per env), `apps/` (one app
   per domain), `common/` (shared permissions + pagination)
 - `Tenant` model + `TenantMiddleware` resolving tenant from subdomain
-  (`apps/tenants/`)
+  (`apps/tenants/`) — FR-1.1
 - Tenant-scoped default manager (`TenantManager`) — every tenant-aware
-  model is isolated at the query level automatically (FR-1.2)
+  model is isolated at the query level automatically — FR-1.2
 - Custom `User` model with `role` (admin/teacher/student/parent) + JWT
-  login embedding `tenant_id`/`role` in the token (FR-1.3, FR-1.5)
+  login embedding `tenant_id`/`role` in the token — FR-1.3, FR-1.5
 - Docker (web + Postgres + Redis + Celery worker/beat) for local dev
 - Free-tier deployment path (`render.yaml`, `config/settings/free_tier.py`)
-  per the Deployment Guide, so M1 can go live on Render/Neon at ₹0 cost
+  so M1 can go live on Render/Neon at ₹0 cost
 
-### Next up — M2: Student & Batch Management
+### Not yet in this scaffold
 
-- Student/Batch CRUD, CSV bulk import, RBAC-scoped list/search APIs
-
-## Next steps (not yet in this scaffold)
-
-- React/Next.js frontend (auth flow + dashboards)
+- React/Next.js frontend (auth flow + dashboards) — M8
 - Test suite (pytest-django)
 - CI/CD pipeline (GitHub Actions)
 - Read-replica routing for scale phase (see SRS §5)
