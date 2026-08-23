@@ -163,6 +163,12 @@ from the subdomain automatically.
 | `/api/attendance/bulk-mark/` | POST | Mark attendance for a whole batch in one call |
 | `/api/attendance/report/?student_id=` | GET | Attendance % for one student, optional `?from=&to=` date range |
 | `/api/attendance/report/?batch_id=` | GET | Per-student breakdown + batch-average attendance % |
+| `/api/fees/structures/` | GET/POST | List/create fee structures (installments) per batch — admin write, everyone else read-only |
+| `/api/fees/structures/{id}/` | GET/PATCH/DELETE | Retrieve/update/remove a fee structure |
+| `/api/fees/payments/` | GET | List payments (admin/teacher), filter by student/fee_structure/status |
+| `/api/fees/payments/initiate/` | POST | Create a pending Payment + Razorpay order for one fee-structure installment |
+| `/api/fees/payments/{id}/verify/` | POST | Verify the Razorpay signature, mark the payment successful, queue the PDF receipt |
+| `/api/fees/payments/outstanding/?batch_id=` | GET | Outstanding dues across all students, optionally scoped to one batch (admin only) |
 
 ## Milestones
 
@@ -173,8 +179,8 @@ Full week-by-week plan: SRS §7. Status:
 | **M1** | Foundation: Django setup, Tenant model + middleware, custom User + JWT auth, Docker, free-tier deploy config | ✅ Done |
 | **M2** | Student & Batch management (CRUD, RBAC, filters) | ✅ Done |
 | **M3** | Attendance module (bulk marking, reports) | ✅ Done |
-| M4 | Fee management (Razorpay, receipts, reminders) | Next |
-| M5 | Exam/Result module + analytics | Planned |
+| **M4** | Fee management (Razorpay, receipts, reminders) | ✅ Done |
+| M5 | Exam/Result module + analytics | Next |
 | M6 | Notifications (Celery + Email/SMS/WhatsApp) | Planned |
 | M7 | Admin dashboard & reporting APIs | Planned |
 | M8 | Frontend integration (React) | Planned |
@@ -244,6 +250,49 @@ Full week-by-week plan: SRS §7. Status:
   eager Celery run) with a scripted functional test against a throwaway
   SQLite DB — not committed, but every check passed before this was
   pushed.
+
+### M4 — what's new
+
+- `FeeStructureViewSet` (`apps/fees/`) — full CRUD over fee structures,
+  admin-write / everyone-read via `IsAdminOrReadOnly`, filterable by
+  `batch` — FR-4.1. An installment plan is modeled as several
+  `FeeStructure` rows sharing a batch (e.g. "Term 1", "Term 2") rather
+  than a separate plan entity — the model already supported this from the
+  M1/M3 scaffold, so M4 only needed to expose it over the API.
+- `PaymentViewSet.initiate` — creates a pending `Payment` and a matching
+  Razorpay order for one fee-structure installment; a student caller
+  always pays for themselves (`student_id` in the body is ignored for
+  student-role users, only honored for admin/teacher paying on a
+  student's behalf) — FR-4.2.
+- `PaymentViewSet.verify` — verifies the Razorpay signature from the
+  client-side callback via `RazorpayService.verify_and_mark_paid`, 403s a
+  student trying to verify someone else's payment, 400s an
+  already-verified payment, and marks the payment `FAILED` (not just a
+  bare error) on a bad signature — FR-4.2.
+- `generate_receipt_pdf` (`apps/fees/services/receipts.py`, reportlab) —
+  actually renders the receipt PDF that was previously just a comment
+  ("PDF generation would happen here") in the M1/M3 scaffold's
+  `send_payment_receipt` task; now attached to the async email — FR-4.3.
+- `PaymentViewSet.outstanding` — admin-only, aggregates unpaid
+  installments per student across all fee structures (optionally scoped
+  to one batch via `?batch_id=`), returns each row plus a running total —
+  FR-4.5.
+- Fee-due reminders (FR-4.4) were already in place from the M1/M3
+  scaffold (`send_fee_due_reminders`, wired into `CELERY_BEAT_SCHEDULE`)
+  and needed no changes.
+- **Fixed a latent dependency bug that M4 was the first milestone to
+  actually exercise:** `razorpay==1.4.2` imports `pkg_resources` at
+  import time, which `setuptools` stopped shipping — the `apps.fees`
+  models/service/tasks existed since the M1/M3 scaffold but were never
+  reachable from a URL, so nothing had imported the package yet. Bumped
+  to `razorpay==2.0.1` (same `client.order` / `client.utility` API, no
+  code changes needed) so `pip install -r requirements/base.txt` doesn't
+  break on current setuptools.
+- Verified the full pay → verify → receipt → outstanding-dues flow
+  (including a mocked Razorpay client, bad-signature handling, and
+  cross-tenant/cross-student permission checks) with a scripted
+  functional test against a throwaway SQLite DB — not committed, same as
+  M2/M3, but every check passed before this was pushed.
 
 ### Not yet in this scaffold
 

@@ -7,7 +7,8 @@ django-redis==5.4.0
 psycopg2-binary==2.9.9
 celery==5.4.0
 redis==5.0.4
-razorpay==1.4.2
+razorpay==2.0.1
+reportlab==4.2.2
 python-decouple==3.8
 gunicorn==22.0.0
 dj-database-url==2.2.0

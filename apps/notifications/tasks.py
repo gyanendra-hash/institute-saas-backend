@@ -1,6 +1,6 @@
 from celery import shared_task
 from django.utils import timezone
-from django.core.mail import send_mail
+from django.core.mail import EmailMessage, send_mail
 from django.conf import settings
 
 
@@ -30,16 +30,23 @@ def send_notification(self, notification_id):
 @shared_task
 def send_payment_receipt(payment_id):
     """Generates the receipt PDF and emails it — kept async so the payment
-    callback API returns immediately."""
+    callback API returns immediately. FR-4.3."""
     from apps.fees.models import Payment
-    payment = Payment.all_objects.select_related("student__user", "tenant").get(id=payment_id)
-    # PDF generation (weasyprint/reportlab) would happen here
-    send_mail(
+    from apps.fees.services.receipts import generate_receipt_pdf
+
+    payment = Payment.all_objects.select_related(
+        "student__user", "fee_structure__batch", "tenant"
+    ).get(id=payment_id)
+    pdf_bytes = generate_receipt_pdf(payment)
+
+    email = EmailMessage(
         subject="Payment Receipt",
-        message=f"Payment of ₹{payment.amount_paid} received. Thank you.",
+        body=f"Payment of Rs. {payment.amount_paid} received. Receipt attached.",
         from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[payment.student.user.email],
+        to=[payment.student.user.email],
     )
+    email.attach(f"receipt_{payment.id}.pdf", pdf_bytes, "application/pdf")
+    email.send()
 
 
 LOW_ATTENDANCE_THRESHOLD = 75  # percent
