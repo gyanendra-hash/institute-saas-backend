@@ -169,6 +169,11 @@ from the subdomain automatically.
 | `/api/fees/payments/initiate/` | POST | Create a pending Payment + Razorpay order for one fee-structure installment |
 | `/api/fees/payments/{id}/verify/` | POST | Verify the Razorpay signature, mark the payment successful, queue the PDF receipt |
 | `/api/fees/payments/outstanding/?batch_id=` | GET | Outstanding dues across all students, optionally scoped to one batch (admin only) |
+| `/api/exams/` | GET/POST | List/create exams (filter by batch) — admin/teacher only |
+| `/api/exams/{id}/` | GET/PATCH/DELETE | Retrieve/update/remove an exam |
+| `/api/exams/{id}/enter-marks/` | POST | Enter/update marks for many students against this exam in one call |
+| `/api/exams/{id}/report/` | GET | Rank, average, and pass/fail status for every student in this exam |
+| `/api/exams/my-results/?student_id=` | GET | A student's own results + performance trend; admin/teacher can pass `?student_id=` for another student |
 
 ## Milestones
 
@@ -180,8 +185,8 @@ Full week-by-week plan: SRS §7. Status:
 | **M2** | Student & Batch management (CRUD, RBAC, filters) | ✅ Done |
 | **M3** | Attendance module (bulk marking, reports) | ✅ Done |
 | **M4** | Fee management (Razorpay, receipts, reminders) | ✅ Done |
-| M5 | Exam/Result module + analytics | Next |
-| M6 | Notifications (Celery + Email/SMS/WhatsApp) | Planned |
+| **M5** | Exam/Result module + analytics | ✅ Done |
+| M6 | Notifications (Celery + Email/SMS/WhatsApp) | Next |
 | M7 | Admin dashboard & reporting APIs | Planned |
 | M8 | Frontend integration (React) | Planned |
 | M9 | Production readiness: CI/CD, monitoring, load testing | Planned |
@@ -294,9 +299,45 @@ Full week-by-week plan: SRS §7. Status:
   functional test against a throwaway SQLite DB — not committed, same as
   M2/M3, but every check passed before this was pushed.
 
+### M5 — what's new
+
+- `ExamViewSet` (`apps/exams/`) — full CRUD over exams, admin/teacher-only
+  via `IsTeacherOrAdmin`, filterable by `batch` — FR-5.1.
+- Added `Exam.passing_marks` (default 35, migration `0002`) — the model
+  only had `max_marks` from the M1/M3 scaffold, so there was no threshold
+  to compute a pass/fail status against. `ExamSerializer.validate()`
+  rejects `passing_marks > max_marks`.
+- `ExamViewSet.enter_marks` — bulk-upserts marks for many students against
+  one exam in a single call, mirroring attendance's `bulk_mark` action.
+  Rejects the whole request (with a per-row detail) if any entry names a
+  student outside the exam's tenant or exceeds `max_marks`, rather than
+  silently skipping or clamping bad rows — FR-5.2.
+- `ExamViewSet.report` — rank (competition ranking: ties share a rank,
+  the next rank skips ahead), class average, and pass/fail status per
+  student for one exam. Admin/teacher only, same as the attendance
+  report — FR-5.3.
+- `ExamViewSet.my_results` — a student's own results and percentage trend
+  across every exam they've sat, or (for admin/teacher oversight)
+  another student's via `?student_id=`. **Known gap:** there's no
+  Parent→Student link anywhere in the schema (`Student` only stores
+  free-text `guardian_name`/`guardian_phone`), so FR-5.4's "Parent shall
+  be able to view results" isn't implementable yet without a schema
+  change — a parent-role caller gets a 403 with an explanatory message
+  instead of being silently allowed to pull up any student by guessing
+  an id.
+- Verified the full schedule → enter-marks → rank/report → student
+  self-view flow (including tie-ranking, cross-tenant student-id
+  smuggling, and permission boundaries per role) with a scripted
+  functional test against a throwaway SQLite DB — not committed, same as
+  M2-M4, but every check passed before this was pushed.
+
 ### Not yet in this scaffold
 
 - React/Next.js frontend (auth flow + dashboards) — M8
 - Test suite (pytest-django)
 - CI/CD pipeline (GitHub Actions)
 - Read-replica routing for scale phase (see SRS §5)
+- Parent→Student linking — `Student` only stores free-text
+  `guardian_name`/`guardian_phone`, so a parent role can't be securely
+  scoped to "their" student(s) yet (see M5 notes above); FR-5.4's
+  parent-facing result view is blocked on this

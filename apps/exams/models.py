@@ -10,6 +10,7 @@ class Exam(TenantAwareModel):
     title = models.CharField(max_length=255)
     exam_date = models.DateField()
     max_marks = models.PositiveIntegerField(default=100)
+    passing_marks = models.PositiveIntegerField(default=35)
 
     objects = TenantManager()
     all_objects = models.Manager()
