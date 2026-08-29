@@ -1,5 +1,21 @@
 services:
   - type: web
+    name: coaching-saas-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: "npm ci && npm run build"
+    staticPublishPath: ./dist
+    envVars:
+      # Set to the coaching-saas-web service's URL once it's deployed
+      # (Render assigns the .onrender.com hostname on first deploy).
+      - key: VITE_API_BASE_URL
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  - type: web
     name: coaching-saas-web
     env: python
     plan: free

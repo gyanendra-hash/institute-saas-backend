@@ -18,7 +18,7 @@ Deployment walkthrough: [`docs/Coaching_SaaS_Deployment_Guide.docx`](docs/Coachi
 | Cache / broker | Redis |
 | Async tasks | Celery (worker + beat) |
 | Payments | Razorpay |
-| Frontend (planned, M8) | React / Next.js |
+| Frontend | React + Vite + TypeScript + Tailwind CSS (`frontend/`) |
 | Free-tier hosting | Render + Neon + Upstash |
 | Paid / self-hosted | Docker + Nginx + Gunicorn |
 
@@ -60,7 +60,8 @@ institute-saas-backend/
 ├── docker/                  # Dockerfile, docker-compose, nginx.conf
 ├── docs/                    # source SRS + Deployment Guide
 ├── requirements/            # base / dev / prod / free_tier pip requirements
-└── render.yaml              # Render Blueprint (free-tier deploy)
+├── frontend/                # React + Vite + TS + Tailwind SPA (M8) — see frontend/README.md
+└── render.yaml              # Render Blueprint (backend API + Celery + Redis + frontend static site)
 ```
 
 ## Local setup
@@ -193,7 +194,7 @@ Full week-by-week plan: SRS §7. Status:
 | **M5** | Exam/Result module + analytics | ✅ Done |
 | **M6** | Notifications (Celery + Email/SMS/WhatsApp) | ✅ Done |
 | **M7** | Admin dashboard & reporting APIs | ✅ Done |
-| M8 | Frontend integration (React) | Planned |
+| **M8** | Frontend integration (React) | ✅ Done |
 | M9 | Production readiness: CI/CD, monitoring, load testing | Planned |
 
 ### M1 — what's in this scaffold
@@ -386,10 +387,40 @@ Full week-by-week plan: SRS §7. Status:
   (`Notification`) — scripted functional test against a throwaway SQLite
   DB, not committed, same discipline as M2-M6.
 
+### M8 — what's new
+
+- **`frontend/`** (new, React + Vite + TypeScript + Tailwind CSS) — a
+  single-page app consuming the existing REST API, no new backend
+  endpoints. See [`frontend/README.md`](frontend/README.md) for setup.
+- JWT auth (login, silent access-token refresh via `login/refresh/` on a
+  401, logout) — `src/auth/AuthContext.tsx`.
+- Role-aware routing/nav (`src/App.tsx`, `src/components/Layout.tsx`):
+  admin/teacher get Dashboard, Attendance, and Exam management; students
+  get My Results and a self-service Pay Now flow; every role gets
+  Students/Batches (read-only unless admin) and Notifications — matching
+  each endpoint's actual DRF permission class rather than assuming access.
+- Pages per module: Dashboard (FR-7.3 widgets), Students (search/filter,
+  create, deactivate, bulk CSV import), Batches (create, assign students),
+  Attendance (bulk-mark a batch, batch/student reports), Fees (staff:
+  structures/payments/outstanding; student: pay via Razorpay Checkout,
+  loaded lazily from `src/razorpay.ts`), Exams (schedule, enter marks,
+  rank report), My Results, Notifications.
+- Known gap carried over from the API rather than papered over: there's no
+  endpoint that lets a student list their own payment history (`PaymentViewSet`
+  is admin/teacher-only apart from `initiate`/`verify`), so the student Fees
+  page doesn't show past payments — see `SelfServiceFeesView` in
+  `frontend/src/pages/FeesPage.tsx`.
+- Verified with a real Chromium session (Playwright, not committed) against
+  the Django dev server on a throwaway SQLite DB: admin login → dashboard →
+  students → exam report; logout; student login → My Results with the
+  correct computed percentage; role-gated nav; every staff/self-service
+  page render for Attendance, Batches, Fees, and Notifications — same
+  "verify before pushing" discipline as the backend milestones, extended to
+  the browser since this is UI work.
+
 ### Not yet in this scaffold
 
-- React/Next.js frontend (auth flow + dashboards) — M8
-- Test suite (pytest-django)
+- Test suite (pytest-django, plus a frontend test runner)
 - CI/CD pipeline (GitHub Actions)
 - Read-replica routing for scale phase (see SRS §5)
 - Parent→Student linking — `Student` only stores free-text
