@@ -19,7 +19,7 @@ services:
     name: coaching-saas-web
     env: python
     plan: free
-    buildCommand: "pip install -r requirements/free_tier.txt && python manage.py collectstatic --noinput"
+    buildCommand: "pip install -r requirements/free_tier.txt && python manage.py migrate --noinput && python manage.py create_demo_admin && python manage.py collectstatic --noinput"
     startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3"
     envVars:
       - key: DJANGO_SETTINGS_MODULE
