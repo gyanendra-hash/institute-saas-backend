@@ -94,6 +94,7 @@ App: http://localhost:8000 · Admin: http://localhost:8000/admin/
 | `DATABASE_URL` | Single Postgres connection string (Neon) — used by `config.settings.free_tier` |
 | `REDIS_URL` | Redis — cache + Celery broker |
 | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | Payment gateway |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER` / `TWILIO_WHATSAPP_FROM` | SMS/WhatsApp — left blank, notifications log instead of sending until configured |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated frontend origins |
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated allowed hostnames |
 
@@ -174,6 +175,8 @@ from the subdomain automatically.
 | `/api/exams/{id}/enter-marks/` | POST | Enter/update marks for many students against this exam in one call |
 | `/api/exams/{id}/report/` | GET | Rank, average, and pass/fail status for every student in this exam |
 | `/api/exams/my-results/?student_id=` | GET | A student's own results + performance trend; admin/teacher can pass `?student_id=` for another student |
+| `/api/notifications/` | GET | Delivery-status history — admins/teachers see the whole tenant, everyone else sees only their own |
+| `/api/notifications/{id}/` | GET | Retrieve one notification |
 
 ## Milestones
 
@@ -186,8 +189,8 @@ Full week-by-week plan: SRS §7. Status:
 | **M3** | Attendance module (bulk marking, reports) | ✅ Done |
 | **M4** | Fee management (Razorpay, receipts, reminders) | ✅ Done |
 | **M5** | Exam/Result module + analytics | ✅ Done |
-| M6 | Notifications (Celery + Email/SMS/WhatsApp) | Next |
-| M7 | Admin dashboard & reporting APIs | Planned |
+| **M6** | Notifications (Celery + Email/SMS/WhatsApp) | ✅ Done |
+| M7 | Admin dashboard & reporting APIs | Next |
 | M8 | Frontend integration (React) | Planned |
 | M9 | Production readiness: CI/CD, monitoring, load testing | Planned |
 
@@ -330,6 +333,28 @@ Full week-by-week plan: SRS §7. Status:
   smuggling, and permission boundaries per role) with a scripted
   functional test against a throwaway SQLite DB — not committed, same as
   M2-M4, but every check passed before this was pushed.
+
+### M6 — what's new
+
+- `apps/notifications/services.py` — `send_sms`/`send_whatsapp` via Twilio
+  when `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN` are set; otherwise they log
+  and still report success instead of raising, the same trade-off `dev.py`'s
+  console `EMAIL_BACKEND` already makes — FR-6.1.
+- `send_notification` (`apps/notifications/tasks.py`) now actually branches
+  into `send_sms`/`send_whatsapp` for those channels — the M1/M3 scaffold
+  only implemented the `EMAIL` branch, the other two were a comment.
+- `NotificationViewSet` (read-only) — admins/teachers see every notification
+  for the tenant, everyone else only their own — FR-6.3.
+- **Normalized `send_fee_due_reminders`** to queue a `Notification` row (like
+  `check_low_attendance` already did) instead of calling `send_mail`
+  directly — the M4 version of this task sent mail with no delivery-status
+  record at all, inconsistent with FR-6.3 and with the low-attendance task
+  sitting right next to it in the same file.
+- Verified log-fallback SMS/WhatsApp, the email send path, the
+  now-audited fee-reminder flow (including that an already-paid student is
+  correctly skipped on the next run), and admin-vs-self notification
+  scoping with a scripted functional test against a throwaway SQLite DB —
+  not committed, same discipline as M2-M5.
 
 ### Not yet in this scaffold
 

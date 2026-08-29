@@ -6,7 +6,13 @@ from django.conf import settings
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=30)
 def send_notification(self, notification_id):
+    """FR-6.1/6.2 — dispatches one Notification over its channel,
+    asynchronously so nothing in the request/response cycle waits on it.
+    FR-6.3: status is always persisted (queued -> sent/failed), whichever
+    channel is used."""
     from apps.notifications.models import Notification
+    from apps.notifications.services import send_sms, send_whatsapp
+
     notification = Notification.all_objects.select_related("user", "tenant").get(id=notification_id)
     try:
         if notification.channel == Notification.Channel.EMAIL:
@@ -16,7 +22,10 @@ def send_notification(self, notification_id):
                 settings.DEFAULT_FROM_EMAIL,
                 [notification.user.email],
             )
-        # SMS / WhatsApp providers plugged in here (Twilio / MSG91 / Gupshup etc.)
+        elif notification.channel == Notification.Channel.SMS:
+            send_sms(notification.user.phone, notification.message)
+        elif notification.channel == Notification.Channel.WHATSAPP:
+            send_whatsapp(notification.user.phone, notification.message)
 
         notification.status = Notification.Status.SENT
         notification.sent_at = timezone.now()
@@ -99,8 +108,13 @@ def check_low_attendance():
 
 @shared_task
 def send_fee_due_reminders():
-    """Scheduled via Celery Beat — runs daily, reminds students of upcoming dues."""
+    """Scheduled via Celery Beat — runs daily, reminds students of upcoming
+    dues (FR-4.4). Queues a Notification (like check_low_attendance) rather
+    than calling send_mail directly, so reminders show up in delivery-status
+    history too (FR-6.3) — the M4 version of this task sent mail inline and
+    left no record."""
     from apps.fees.models import FeeStructure, Payment
+    from apps.notifications.models import Notification
     from datetime import timedelta
 
     upcoming = timezone.now().date() + timedelta(days=3)
@@ -111,10 +125,14 @@ def send_fee_due_reminders():
             already_paid = Payment.all_objects.filter(
                 fee_structure=fs, student=student, status=Payment.PaymentStatus.SUCCESS
             ).exists()
-            if not already_paid:
-                send_mail(
-                    subject="Fee Due Reminder",
-                    message=f"Your fee of ₹{fs.amount} for {fs.name} is due on {fs.due_date}.",
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=[student.user.email],
-                )
+            if already_paid:
+                continue
+
+            notification = Notification.all_objects.create(
+                tenant=student.tenant,
+                user=student.user,
+                channel=Notification.Channel.EMAIL,
+                subject="Fee Due Reminder",
+                message=f"Your fee of Rs. {fs.amount} for {fs.name} is due on {fs.due_date}.",
+            )
+            send_notification.delay(notification.id)
