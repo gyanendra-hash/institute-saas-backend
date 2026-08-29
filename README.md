@@ -10,11 +10,18 @@ Deployment walkthrough: [`docs/Coaching_SaaS_Deployment_Guide.docx`](docs/Coachi
 
 **Live:**
 
-| | URL |
-|---|---|
-| Frontend | https://coaching-saas-frontend.onrender.com |
-| Backend API | https://institute-saas-web.onrender.com/api/ |
-| Django admin | https://institute-saas-web.onrender.com/admin/ |
+| | URL | What you'll see |
+|---|---|---|
+| Frontend (the actual app) | https://coaching-saas-frontend.onrender.com | Login screen — this is what end users should visit |
+| Django admin | https://institute-saas-web.onrender.com/admin/ | Django's built-in admin login |
+| Backend API root | https://institute-saas-web.onrender.com/api/students/ | `{"detail":"Authentication credentials were not provided."}` — expected, every API endpoint requires a JWT (see `/api/auth/login/`); there's no view at the bare `/` root, so that path always 404s |
+
+Logging in on the live frontend needs a real tenant — Render's free
+`.onrender.com` domain has no wildcard subdomain, so `TenantMiddleware`
+can't resolve one yet (see "Deployment" below). Until a custom domain is
+attached, use `python manage.py createsuperuser` against the live DB (or
+the Django admin above, once a `Tenant` + `User` exist) rather than
+expecting the hosted frontend login to work standalone.
 
 ## Tech stack
 
