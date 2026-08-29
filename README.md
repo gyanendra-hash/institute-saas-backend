@@ -54,8 +54,9 @@ institute-saas-backend/
 │   ├── attendance/                  # attendance + bulk-mark API
 │   ├── fees/                          # fee structures, Razorpay payments
 │   ├── exams/                           # exams + results
-│   └── notifications/                     # Celery async tasks (email/SMS/WhatsApp)
-├── common/                  # shared DRF permissions, pagination
+│   ├── notifications/                     # Celery async tasks (email/SMS/WhatsApp)
+│   └── dashboard/                           # admin/teacher summary reporting API
+├── common/                  # shared DRF permissions, pagination, CSV export admin mixin
 ├── docker/                  # Dockerfile, docker-compose, nginx.conf
 ├── docs/                    # source SRS + Deployment Guide
 ├── requirements/            # base / dev / prod / free_tier pip requirements
@@ -177,6 +178,7 @@ from the subdomain automatically.
 | `/api/exams/my-results/?student_id=` | GET | A student's own results + performance trend; admin/teacher can pass `?student_id=` for another student |
 | `/api/notifications/` | GET | Delivery-status history — admins/teachers see the whole tenant, everyone else sees only their own |
 | `/api/notifications/{id}/` | GET | Retrieve one notification |
+| `/api/dashboard/summary/` | GET | Revenue collected, active students, outstanding dues, attendance % over a trailing window (`?days=`, default 30) — admin/teacher only |
 
 ## Milestones
 
@@ -190,7 +192,7 @@ Full week-by-week plan: SRS §7. Status:
 | **M4** | Fee management (Razorpay, receipts, reminders) | ✅ Done |
 | **M5** | Exam/Result module + analytics | ✅ Done |
 | **M6** | Notifications (Celery + Email/SMS/WhatsApp) | ✅ Done |
-| M7 | Admin dashboard & reporting APIs | Next |
+| **M7** | Admin dashboard & reporting APIs | ✅ Done |
 | M8 | Frontend integration (React) | Planned |
 | M9 | Production readiness: CI/CD, monitoring, load testing | Planned |
 
@@ -355,6 +357,34 @@ Full week-by-week plan: SRS §7. Status:
   correctly skipped on the next run), and admin-vs-self notification
   scoping with a scripted functional test against a throwaway SQLite DB —
   not committed, same discipline as M2-M5.
+
+### M7 — what's new
+
+- **`apps/dashboard/`** (new app) — `GET /api/dashboard/summary/`
+  (`DashboardSummaryView`), admin/teacher only (FR-7.3): active student
+  count, revenue collected (`Payment` success sum), outstanding dues
+  (same per-fee-structure unpaid calculation as
+  `PaymentViewSet.outstanding`, kept consistent rather than
+  reimplemented), and attendance % over a trailing window (`?days=`,
+  default 30).
+- **`common/admin.py::CSVExportMixin`** (new, FR-7.4) — a generic "export
+  selected as CSV" admin action that reads each `ModelAdmin`'s own
+  `list_display` as the column set, so any list view gets CSV export for
+  free. Replaces the one-off `export_as_csv` that `StudentAdmin` had
+  hand-rolled, and is now applied to every tenant-scoped admin
+  (`Student`, `Batch`, `Attendance`, `FeeStructure`, `Payment`, `Exam`,
+  `Result`, `Notification`, `User`).
+- FR-7.1 (tenant-scoped list views with search/filter/pagination), FR-7.2
+  (inline editing — `StudentInline` on `Batch`, `ResultInline` on `Exam`),
+  and FR-7.5 (admin actions scoped to tenant via each `get_queryset()`)
+  were already satisfied by the M1-M6 scaffold — no new work needed there.
+- Verified the dashboard numbers (revenue/outstanding/attendance %) against
+  hand-computed expected values, tenant isolation (a second tenant's data
+  never leaks into the summary), the admin/teacher-only permission
+  boundary, and CSV export on both a model with custom `list_display`
+  methods (`Student.full_name`) and one with only plain fields
+  (`Notification`) — scripted functional test against a throwaway SQLite
+  DB, not committed, same discipline as M2-M6.
 
 ### Not yet in this scaffold
 

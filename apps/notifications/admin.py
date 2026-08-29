@@ -1,10 +1,12 @@
 from django.contrib import admin
 
+from common.admin import CSVExportMixin
+
 from .models import Notification
 
 
 @admin.register(Notification)
-class NotificationAdmin(admin.ModelAdmin):
+class NotificationAdmin(CSVExportMixin, admin.ModelAdmin):
     list_display = ("user", "channel", "subject", "status", "sent_at", "tenant")
     list_filter = ("channel", "status", "tenant")
     search_fields = ("user__username", "user__email", "subject")

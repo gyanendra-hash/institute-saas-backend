@@ -1,9 +1,12 @@
 from django.contrib import admin
+
+from common.admin import CSVExportMixin
+
 from .models import Attendance
 
 
 @admin.register(Attendance)
-class AttendanceAdmin(admin.ModelAdmin):
+class AttendanceAdmin(CSVExportMixin, admin.ModelAdmin):
     list_display = ("student", "date", "status", "tenant", "marked_by")
     list_filter = ("status", "tenant", "date")
     search_fields = ("student__roll_number", "student__user__first_name")

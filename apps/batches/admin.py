@@ -1,4 +1,7 @@
 from django.contrib import admin
+
+from common.admin import CSVExportMixin
+
 from .models import Batch
 
 
@@ -12,7 +15,7 @@ class StudentInline(admin.TabularInline):
 
 
 @admin.register(Batch)
-class BatchAdmin(admin.ModelAdmin):
+class BatchAdmin(CSVExportMixin, admin.ModelAdmin):
     list_display = ("name", "course", "tenant", "start_date", "end_date", "is_active", "student_count")
     list_filter = ("is_active", "tenant", "course")
     search_fields = ("name", "course")

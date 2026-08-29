@@ -1,4 +1,7 @@
 from django.contrib import admin
+
+from common.admin import CSVExportMixin
+
 from .models import Exam, Result
 
 
@@ -10,7 +13,7 @@ class ResultInline(admin.TabularInline):
 
 
 @admin.register(Exam)
-class ExamAdmin(admin.ModelAdmin):
+class ExamAdmin(CSVExportMixin, admin.ModelAdmin):
     list_display = ("title", "batch", "exam_date", "max_marks", "tenant", "result_count")
     list_filter = ("tenant", "batch")
     search_fields = ("title",)
@@ -30,7 +33,7 @@ class ExamAdmin(admin.ModelAdmin):
 
 
 @admin.register(Result)
-class ResultAdmin(admin.ModelAdmin):
+class ResultAdmin(CSVExportMixin, admin.ModelAdmin):
     list_display = ("student", "exam", "marks_obtained", "percentage")
     search_fields = ("student__roll_number", "exam__title")
     autocomplete_fields = ("student", "exam")

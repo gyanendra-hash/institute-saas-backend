@@ -1,10 +1,13 @@
 from django.contrib import admin
 from django.db.models import Sum
+
+from common.admin import CSVExportMixin
+
 from .models import FeeStructure, Payment
 
 
 @admin.register(FeeStructure)
-class FeeStructureAdmin(admin.ModelAdmin):
+class FeeStructureAdmin(CSVExportMixin, admin.ModelAdmin):
     list_display = ("name", "batch", "amount", "due_date", "tenant")
     list_filter = ("tenant", "due_date")
     search_fields = ("name", "batch__name")
@@ -19,7 +22,7 @@ class FeeStructureAdmin(admin.ModelAdmin):
 
 
 @admin.register(Payment)
-class PaymentAdmin(admin.ModelAdmin):
+class PaymentAdmin(CSVExportMixin, admin.ModelAdmin):
     list_display = ("student", "fee_structure", "amount_paid", "status", "paid_at", "tenant")
     list_filter = ("status", "tenant")
     search_fields = ("student__roll_number", "razorpay_payment_id", "razorpay_order_id")
